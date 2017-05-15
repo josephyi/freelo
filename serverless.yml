@@ -4,9 +4,12 @@ frameworkVersion: ">=1.4.0 <2.0.0"
 
 package:
   exclude:
+    - node_modules/babel-*/**
     - node_modules/eslint/**
     - node_modules/chai/**
     - node_modules/mocha/**
+    - node_modules/es5-*/**
+    - node_modules/es6-*/**
     - .git/**
     - src
 
