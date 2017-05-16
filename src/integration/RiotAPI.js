@@ -26,4 +26,15 @@ export default class RiotAPI {
       json: true
     })
   }
+
+  staticChampById(id, champData) {
+    return rp({
+      uri: `https://na1.api.riotgames.com/lol/static-data/v3/champions/${id}`,
+      qs: {
+        champData: champData
+      },
+      headers: this.headers,
+      json: true
+    })
+  }
 }
