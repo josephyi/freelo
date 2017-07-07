@@ -3,36 +3,87 @@ import RiotAPI from './integration/RiotAPI';
 
 const api = new RiotAPI(process.env.RIOT_API_KEY);
 
+const delegateSlotCollection = function() {
+      const { dialogState, intent} = this.event.request;
+      console.log("in delegateSlotCollection");
+      console.log("current dialogState: "+dialogState);
+        if (dialogState === "STARTED") {
+          console.log("in Beginning");
+          var updatedIntent= intent;
+          //optionally pre-fill slots: update the intent object with slot values for which
+          //you have defaults, then return Dialog.Delegate with this updated intent
+          // in the updatedIntent property
+          this.emit(":delegate", updatedIntent);
+        } else if (dialogState !== "COMPLETED") {
+          console.log("in not completed");
+          // return a Dialog.Delegate directive with no updatedIntent property.
+          this.emit(":delegate");
+        } else {
+          console.log("in completed");
+          console.log("returning: "+ JSON.stringify(intent));
+          // Dialog is now complete and all required slots should be filled,
+          // so call your normal intent handler.
+          return intent;
+        }
+}
+
 const namesToIds = async () => {
   const staticChamps = await api.staticChamps();
   return Object.assign(...Object.keys(staticChamps['data']).map( key => ({[`${normalizeName(staticChamps['data'][key]['name'])}`]: key})));
 }
 
-const championSlotToId = async ({championName}) => {
+const championNameToId = async (championName) => {
   const ids = await namesToIds();
-  console.log(ids);
-  console.log(championName.value);
-  return ids[championName.value];
+  return ids[normalizeName(championName)];
 }
 
 const normalizeName = (name) => {
-  return name.toLowerCase();
+  return name.toLowerCase().replace(/'/g, ' ');
 }
 
 const sanitizeLore = (lore) => {
   return lore.replace(/<br>/g, ' ');
 }
 
-const championLoreHandler = async function() {
-  console.log('championLoreHandler', this.event.request.intent.slots);
-  const id = await championSlotToId(this.event.request.intent.slots);
-  console.log('championLoreHandler ID', id);
-  if (id) {
-    const champion = await api.staticChampById(id, 'lore');
-    const lore = sanitizeLore(champion['lore'])
-    this.emit(':tellWithCard', lore, `${champion['name']}'s Lore`, lore);
-  } else {
-    this.emit(':tell', 'Handle unknown slot');
+const champImage = (image, version) => {
+  const imageUrl = `https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${image}`;
+  console.log(imageUrl);
+  return {
+    smallImageUrl: imageUrl,
+    largeImageUrl: imageUrl
+  }
+}
+
+const responseFor = function(champion, champDataType, version) {
+  const reprompt = ' Anything else?';
+  switch(champDataType) {
+    case 'lore':
+    case 'story':
+      const lore = sanitizeLore(champion['lore']) + reprompt;
+      this.emit(':askWithCard', lore, reprompt, `${champion['name']}'s Lore`, champion['lore'], champImage(champion['image']['full'], version));
+      break;
+    case 'passive':
+      const imageUrl = `https://ddragon.leagueoflegends.com/cdn/${version}/img/passive/${champion['passive']['image']['full']}`
+      const speechOutput = champion['passive']['sanitizedDescription'] + reprompt;
+      const cardTitle = champion['passive']['name'];
+      const cardContent = champion['passive']['description'];
+      const cardImage = { smallImageUrl: imageUrl, largeImageUrl: imageUrl };
+      this.emit(':askWithCard', speechOutput, reprompt, cardTitle, cardContent, cardImage);
+      break;
+  }
+
+}
+
+const championInfoHandler = async function() {
+  const filledSlots = delegateSlotCollection.apply(this);
+  if(filledSlots) {
+    const {championName, champDataType} = filledSlots.slots;
+    console.log('championInfoHandler', filledSlots.slots);
+    console.log('championInfoHandler', championName);
+    console.log('championInfoHandler', championName.value);
+    const id = await championNameToId(championName.value);
+    const [champion, versions] = await Promise.all([api.staticChampById(id, 'all'), api.versions()]);
+    responseFor.apply(this, [champion, champDataType.value, versions[0]]);
   }
 }
 
@@ -43,13 +94,14 @@ const freeToPlayHandler = async function() {
 }
 
 const launchRequestHandler = function() {
-  this.emit(':ask', 'what would you like?');
+  this.emit(':ask', 'Greetings summoner. How may I be of service?');
 }
 
 const handlers = {
   "LaunchRequest": launchRequestHandler,
   "FreeToPlayIntent": freeToPlayHandler,
-  "ChampionLoreIntent": championLoreHandler
+  "ChampionLoreIntent": championLoreHandler,
+  "ChampionInfoIntent": championInfoHandler
 };
 
 exports.handler = (event, context) => {

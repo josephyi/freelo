@@ -37,4 +37,12 @@ export default class RiotAPI {
       json: true
     })
   }
+
+  versions() {
+    return rp({
+      uri: `https://na1.api.riotgames.com/lol/static-data/v3/versions`,
+      headers: this.headers,
+      json: true
+    })
+  }
 }
